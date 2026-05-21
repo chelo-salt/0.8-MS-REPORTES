@@ -19,26 +19,31 @@ public class ReporteModel {
     private Long id;
 
     @Column(nullable = false)
-    private String tipoReporte; // Ej: "FINANCIERO", "OCUPACION", "RENDIMIENTO"
+    private String tipoReporte;
 
     @Column(nullable = false)
-    private LocalDate fechaInicioRango; // Desde cuándo filtra el reporte
+    private LocalDate fechaInicio; // Estandarizado
 
     @Column(nullable = false)
-    private LocalDate fechaFinRango; // Hasta cuándo filtra el reporte
+    private LocalDate fechaFin; // Estandarizado
 
     @Column(nullable = false)
-    private Double totalRecaudado; // Monto calculado acumulado
+    private Double totalRecaudado;
 
     @Column(nullable = false)
-    private Integer totalReservas; // Cantidad de reservas procesadas en ese rango
+    private Integer totalReservas;
 
     @Column(nullable = false)
-    private String canchaMasSolicitada; // Nombre de la cancha estrella en ese periodo
+    private String canchaEstrella; // Estandarizado con el Response
+
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime fechaGeneracion;
 
     @Column(nullable = false)
-    private LocalDateTime fechaGeneracion; // Timestamp de auditoría
+    private String generadoPor; // Estandarizado
 
-    @Column(nullable = false)
-    private String generadoPor; // Nombre o ID del administrador que lo solicitó
+    @PrePersist
+    protected void onCreate() {
+        this.fechaGeneracion = LocalDateTime.now(); // Se ejecuta automáticamente antes de insertar
+    }
 }

@@ -7,57 +7,65 @@ import cl.municipalidad.reportes.model.ReporteModel;
 import cl.municipalidad.reportes.repository.ReporteRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
-import java.time.LocalDateTime;
+import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 @Service
-@RequiredArgsConstructor // 🚀 Inyecta el repositorio y el cliente de red por constructor automáticamente
+@RequiredArgsConstructor
 public class ReporteService {
 
     private final ReporteRepository reporteRepository;
     private final AnaliticaClient analiticaClient;
 
-    public DtoReporteResponse procesarYGuardarReporte(DtoGenerarReporteRequest request) {
+    /**
+     * Procesa la analítica en paralelo desde otros servicios, guarda el registro histórico
+     * y retorna el DTO estandarizado.
+     */
+    @Transactional // 🗄️ Asegura la integridad transaccional de la persistencia
+    public DtoReporteResponse procesarYGuardarReporte(DtoGenerarReporteRequest request, String token) {
         
         // 1. 🛡️ Validación de consistencia temporal
         if (request.getFechaInicio().isAfter(request.getFechaFin())) {
-            throw new RuntimeException("Error de negocio: La fecha de inicio no puede ser posterior a la fecha de fin.");
+            throw new IllegalArgumentException("Error de negocio: La fecha de inicio no puede ser posterior a la fecha de fin.");
         }
 
-        // 2. 📡 Orquestación y consumo de microservicios externos mediante WebClient síncrono (.block())
-        Double recaudacionTotal = analiticaClient.obtenerRecaudacionPorRango(request.getFechaInicio(), request.getFechaFin()).block();
-        Integer cantidadReservas = analiticaClient.obtenerTotalReservasPorRango(request.getFechaInicio(), request.getFechaFin()).block();
+        // 2. ⚡ Orquestación Reactiva en Paralelo (Mono.zip)
+        // Las tres peticiones HTTP viajan al mismo tiempo. El tiempo total será igual al del servicio más lento.
+        var consultasCombinadas = Mono.zip(
+                analiticaClient.obtenerRecaudacionPorRango(request.getFechaInicio(), request.getFechaFin(), token),
+                analiticaClient.obtenerTotalReservasPorRango(request.getFechaInicio(), request.getFechaFin(), token),
+                analiticaClient.obtenerCanchaEstrellaPorRango(request.getFechaInicio(), request.getFechaFin(), token)
+        ).block(); // 🛑 Un único punto de bloqueo para consolidar los resultados síncronamente
 
-        // 3. 🎯 Algoritmo de simulación analítica para determinar la cancha estrella del período
-        String canchaEstrella = "Complejo Principal - Cancha de Fútbol 11"; 
-        if (cantidadReservas != null && cantidadReservas > 0 && cantidadReservas % 2 == 0) {
-            canchaEstrella = "Complejo Municipal - Cancha de Tenis Rápida";
-        }
+        // Extracción segura de los datos combinados
+        Double recaudacionTotal = consultasCombinadas != null ? consultasCombinadas.getT1() : 0.0;
+        Integer cantidadReservas = consultasCombinadas != null ? consultasCombinadas.getT2() : 0;
+        String canchaEstrella = consultasCombinadas != null ? consultasCombinadas.getT3() : "Sin datos";
 
-        // 4. 🗄️ Construcción y mapeo del modelo para persistencia local en db_reportes
+        // 3. 🗄️ Construcción del modelo (Nombres estandarizados)
         ReporteModel modelo = new ReporteModel();
         modelo.setTipoReporte(request.getTipoReporte().toUpperCase());
-        modelo.setFechaInicioRango(request.getFechaInicio());
-        modelo.setFechaFinRango(request.getFechaFin());
-        modelo.setTotalRecaudado(recaudacionTotal != null ? recaudacionTotal : 0.0);
-        modelo.setTotalReservas(cantidadReservas != null ? cantidadReservas : 0);
-        modelo.setCanchaMasSolicitada(canchaEstrella);
-        modelo.setFechaGeneracion(LocalDateTime.now());
-        modelo.setGeneradoPor(request.getGeneradoPor());
+        modelo.setFechaInicio(request.getFechaInicio());
+        modelo.setFechaFin(request.getFechaFin());
+        modelo.setTotalRecaudado(recaudacionTotal);
+        modelo.setTotalReservas(cantidadReservas);
+        modelo.setCanchaEstrella(canchaEstrella);
+        modelo.setGeneradoPor(request.getGeneradoPor()); 
+        // 💡 Nota: fechaGeneracion se omite aquí porque la maneja automáticamente el @PrePersist de la entidad.
 
         ReporteModel registroGuardado = reporteRepository.save(modelo);
 
-        // 5. 📤 Mapeo y formateo final hacia el DTO de respuesta para el panel de administración
+        // 4. 📤 Mapeo limpio hacia el DTO de respuesta final
         DtoReporteResponse response = new DtoReporteResponse();
         response.setIdReporte(registroGuardado.getId());
         response.setTipoReporte(registroGuardado.getTipoReporte());
-        response.setDesde(registroGuardado.getFechaInicioRango());
-        response.setHasta(registroGuardado.getFechaFinRango());
+        response.setFechaInicio(registroGuardado.getFechaInicio());
+        response.setFechaFin(registroGuardado.getFechaFin());
         response.setTotalRecaudado(registroGuardado.getTotalRecaudado());
         response.setTotalReservas(registroGuardado.getTotalReservas());
-        response.setCanchaEstrella(registroGuardado.getCanchaMasSolicitada());
-        response.setFechaGeneracion(registroGuardado.getFechaGeneracion());
-        response.setOperadorResponsable(registroGuardado.getGeneradoPor());
+        response.setCanchaEstrella(registroGuardado.getCanchaEstrella());
+        response.setFechaGeneracion(registroGuardado.getFechaGeneracion()); // Trae el valor generado por la DB
+        response.setGeneradoPor(registroGuardado.getGeneradoPor());
 
         return response;
     }

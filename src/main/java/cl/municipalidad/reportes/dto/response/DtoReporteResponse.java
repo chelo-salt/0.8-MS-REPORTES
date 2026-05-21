@@ -12,11 +12,11 @@ import java.time.LocalDateTime;
 public class DtoReporteResponse {
     private Long idReporte;
     private String tipoReporte;
-    private LocalDate desde;
-    private LocalDate hasta;
+    private LocalDate fechaInicio;
+    private LocalDate fechaFin;
     private Double totalRecaudado;
     private Integer totalReservas;
-    private String canchaEstrella; // La cancha más solicitada en ese periodo
+    private String canchaEstrella;
     private LocalDateTime fechaGeneracion;
-    private String operadorResponsable;
+    private String generadoPor;
 }

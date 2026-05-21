@@ -11,7 +11,6 @@ public class AnaliticaClient {
     private final WebClient webClientPagos;
     private final WebClient webClientReservas;
 
-    // Spring asocia automáticamente los nombres de los parámetros con los Beans de WebClientConfig
     public AnaliticaClient(WebClient webClientPagos, WebClient webClientReservas) {
         this.webClientPagos = webClientPagos;
         this.webClientReservas = webClientReservas;
@@ -19,33 +18,58 @@ public class AnaliticaClient {
 
     /**
      * Consume ms-pagos para obtener la suma total recaudada en un rango de fechas.
-     * Si falla, retorna 0.0 de manera segura (fallback tolerante a fallos).
      */
-    public Mono<Double> obtenerRecaudacionPorRango(LocalDate inicio, LocalDate fin) {
+    public Mono<Double> obtenerRecaudacionPorRango(LocalDate inicio, LocalDate fin, String token) {
+        String tokenLimpio = token.startsWith("Bearer ") ? token : "Bearer " + token;
+
         return webClientPagos.get()
                 .uri(uriBuilder -> uriBuilder
-                        .path("/api/v1/pagos/analitica/recaudacion")
+                        .path("/api/v1/pagos/pago/analitica/recaudacion") // 👈 Ruta ajustada al controlador
                         .queryParam("fechaInicio", inicio)
                         .queryParam("fechaFin", fin)
                         .build())
+                .header("Authorization", tokenLimpio)
                 .retrieve()
                 .bodyToMono(Double.class)
+                .doOnError(e -> System.err.println("🚨 ERROR EN MS-PAGOS: " + e.getMessage()))
                 .onErrorReturn(0.0);
     }
 
     /**
-     * Consume ms-reservas para obtener el total de reservas confirmadas en un rango de fechas.
-     * Si falla, retorna 0 de manera segura.
+     * Consume ms-reservas para obtener el total de reservas confirmadas.
      */
-    public Mono<Integer> obtenerTotalReservasPorRango(LocalDate inicio, LocalDate fin) {
+    public Mono<Integer> obtenerTotalReservasPorRango(LocalDate inicio, LocalDate fin, String token) {
+        String tokenLimpio = token.startsWith("Bearer ") ? token : "Bearer " + token;
+
         return webClientReservas.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/api/v1/reservas/analitica/conteo")
                         .queryParam("fechaInicio", inicio)
                         .queryParam("fechaFin", fin)
                         .build())
+                .header("Authorization", tokenLimpio)
                 .retrieve()
                 .bodyToMono(Integer.class)
+                .doOnError(e -> System.err.println("🚨 ERROR EN MS-RESERVAS (Conteo): " + e.getMessage()))
                 .onErrorReturn(0);
+    }
+
+    /**
+     * Consume ms-reservas para conocer la cancha más solicitada.
+     */
+    public Mono<String> obtenerCanchaEstrellaPorRango(LocalDate inicio, LocalDate fin, String token) {
+        String tokenLimpio = token.startsWith("Bearer ") ? token : "Bearer " + token;
+
+        return webClientReservas.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/v1/reservas/analitica/cancha-estrella")
+                        .queryParam("fechaInicio", inicio)
+                        .queryParam("fechaFin", fin)
+                        .build())
+                .header("Authorization", tokenLimpio)
+                .retrieve()
+                .bodyToMono(String.class)
+                .doOnError(e -> System.err.println("🚨 ERROR EN MS-RESERVAS (Estrella): " + e.getMessage()))
+                .onErrorReturn("Sin datos");
     }
 }
